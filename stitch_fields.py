@@ -20,7 +20,8 @@ import numpy as np
 #for positional arguments, one has to add the same string that the optional gets automatically
 parser = argparse.ArgumentParser(description='A small utility for field images ' \
     'exported from automated microscope platforms.\nStarts in the middle and ' \
-    'stitches fields in a spiral pattern to create the well image.', 
+    'stitches fields in a spiral pattern to create the well image.\n' \
+    'Each well and channel need to be in a separate directory', 
     formatter_class=argparse.RawTextHelpFormatter)
 parser.add_argument('path', default=os.getcwd(), nargs='?',
     help='path to images  (default: current directory)')
@@ -66,8 +67,11 @@ def spiral_structure(dir_path, img_types):
     '''
     Define the movement scheme and starting point for the field layout
     '''
+    #find the number of fields/images matching the specified extension(s)
     fields = len([fname for fname in os.listdir(dir_path) if fname[-3:] in img_types])
+    #size the array based on the field number, array will be squared
     arr_dim = int(np.ceil(np.sqrt(fields)))
+    #define the movement schema and find the starting point (middle) of the array
     if args.direction == 'down_left':
         moves = [move_down, move_left, move_up, move_right]
         if arr_dim % 2 != 0:
@@ -122,7 +126,7 @@ def spiral_structure(dir_path, img_types):
 
 def gen_points(end, moves, starting_point):
     '''
-    Generate coordinates for each field number
+    Generate coordinates for each field number. From stackoverflow
     '''
     _moves = cycle(moves)
     n = 1
@@ -148,14 +152,16 @@ def spiral_array(fields, arr_dim, moves, starting_point, zeroth_field):
     '''
     Fill the array in the given direction
     '''
+    #create an array of zeros and then fill with a number not used for any field
     img_layout = np.zeros((arr_dim, arr_dim), dtype=int)
+    img_layout[:] = -1 #TODO this means that the zeroth field will be put in multiple places... fixed?
     #create a different layout depending on the numbering of the first field
     if zeroth_field:
         for point, coord in list(gen_points(fields, moves, starting_point)):
             img_layout[coord] = point -1
         print('')
         print('Field layout:')    
-        for row in np.ma.masked_equal(img_layout, 50): #TODO fix so that lines are showing for unused field
+        for row in np.ma.masked_equal(img_layout, -1): #TODO fix so that lines are showing for unused field
             print(' '.join(['{:>2}'.format(str(i)) for i in row]))
 
     else:
@@ -163,51 +169,61 @@ def spiral_array(fields, arr_dim, moves, starting_point, zeroth_field):
             img_layout[coord] = point
         print('')
         print('Field layout:')    
-        for row in np.ma.masked_equal(img_layout, 0):
+        for row in np.ma.masked_equal(img_layout, -1):
             print(' '.join(['{:>2}'.format(str(i)) for i in row]))
 
     return img_layout
               
 
-def find_images(dir_path, img_types, flip, field_str):
+def find_images(dir_path, img_types, no_flip, field_str):
     '''
     Create a dictionary with the field numbers as keys to the field images
     '''
     zeroth_field = False #changes if a zeroth field is found in 'find_images'
     imgs = {}
     print('______________________________')
-    print(dir_path)         
+    print(dir_path)
+    #go through each directory
     for fname in os.listdir(dir_path):
         if fname[-3:] in img_types:
-            field_ind = fname.index(field_str) + len(field_str)
             print(fname)
-            fnum = [int(char) for char in fname[field_ind:field_ind+2] if char.isdigit()][0]
+            #find the index of the field identifier string in the file name
+            field_ind = fname.index(field_str) + len(field_str)
             fnum = int(''.join([str(int(char)) for char in fname[field_ind:field_ind+2] if char.isdigit()]))
+            #If field 0 is encountered, change start numbering of the array
             if fnum == 0:
                 zeroth_field = True
-            if not flip:
+            #The default is to flip since this is the most common case
+            if no_flip:
+                imgs[fnum] = Image.open(os.path.join(dir_path, fname))
+            else:
                 #dunno why we need to flip...
                 imgs[fnum] = Image.open(os.path.join(dir_path, fname)).transpose(Image.FLIP_TOP_BOTTOM) #transpose(Image.FLIP_LEFT_RIGHT)
-                print('flip')
-            else:
-                imgs[fnum] = Image.open(os.path.join(dir_path, fname))
+                
     return imgs, zeroth_field
 
 #stitch the image row by row
 def stitch_images(imgs, img_layout, dir_path, output_format, arr_dim):
     '''
-    Stitch images by looking 
+    Stitch images by going row and column wise in the img_layout and look up
+    the number of the image to place at the (row, col) coordinate. So not filling
+    in a spiral but using the spiral lookuptable instead.
     '''
+    #create the size of the well image to be filled in
     width, height = imgs[1].size
     num = 0
     stitched = Image.new('RGB', (width*arr_dim, height*arr_dim))
     for row in xrange(0, width*arr_dim, width):
         for col in xrange(0, height*arr_dim, height):
+            #since the image is filled by row and col instead of sprial, this
+            #error catching is needed for the empty places
             try:
+                #'stitch' fields by pasting them at the appropriate place in the black background
                 stitched.paste(imgs[img_layout.ravel()[num]], (col, row))
             except KeyError:
                 pass
             num += 1
+    #save image
     stitched_name = os.path.join(dir_path, 'stitched_' + timestamp + '.' + output_format)
     stitched.save(stitched_name, format=output_format)
     # stitched.show()
@@ -217,8 +233,10 @@ def stitch_images(imgs, img_layout, dir_path, output_format, arr_dim):
 
 #main program
 if args.recursive:
+    #walk through each subdirectory and the current direcotry
     for dir_list in os.walk(args.path):
         imgs, zeroth_field = find_images(dir_list[0], img_types, args.no_flip, args.field_string)
+        #if there are images in the directory
         if imgs:
             fields, arr_dim, moves, starting_point = spiral_structure(dir_list[0], img_types)
             img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)
@@ -228,6 +246,7 @@ if args.recursive:
             print('No images found')
 else:
     imgs, zeroth_field = find_images(args.path, img_types, args.no_flip, args.field_string)
+    #if there are images in the directory
     if imgs:
         fields, arr_dim, moves, starting_point = spiral_structure(args.path, img_types)
         img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)

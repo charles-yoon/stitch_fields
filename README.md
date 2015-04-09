@@ -1,4 +1,4 @@
-# field_stitcher
+stitch_fields
 
 usage: stitch_images.py [-h] [-o [OUTPUT_FORMAT]] [-i [INPUT_FORMAT]]
                         [-f FIELD_STRING] [-d [DIRECTION]] [-r] [-n]

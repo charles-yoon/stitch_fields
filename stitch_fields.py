@@ -233,7 +233,7 @@ def stitch_images(imgs, img_layout, dir_path, output_format, arr_dim):
 
 #main program
 if args.recursive:
-    #walk through each subdirectory and the current direcotry
+    #walk through each subdirectory and the current directory
     for dir_list in os.walk(args.path):
         imgs, zeroth_field = find_images(dir_list[0], img_types, args.no_flip, args.field_string)
         #if there are images in the directory

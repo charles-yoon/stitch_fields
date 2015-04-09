@@ -45,6 +45,7 @@ timestamp = str(int(time.time()))[3:]
 img_types = set((args.input_format,)) #can add extra ext here is needed, remember to not have same as stiched
 print('Stitching images...')
 
+#Define movement function for filling in the sprial array
 def move_right(x,y):
     return x, y +1
 

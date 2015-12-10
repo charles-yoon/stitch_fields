@@ -1,0 +1,369 @@
+#!/usr/bin/env python
+
+'''
+Small script for stitching together cellomics images. The user needs to define the path, 
+input/output image extensions and the img_layout (fieldlookuptable for the microscope)
+
+Joel 2015-04-03
+'''
+from __future__ import division
+import os
+from PIL import Image
+import argparse
+import time
+from itertools import cycle
+import numpy as np
+import shutil
+import logging
+import sys
+
+#Set up the command line arguments
+#the formatter_class adds the default value to optional arguments
+#argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+#for positional arguments, one has to add the same string that the optional gets automatically
+parser = argparse.ArgumentParser(description='A small utility for field images ' \
+    'exported from automated microscope platforms.\nStarts in the middle and ' \
+    'stitches fields in a spiral pattern to create the well image.\n' \
+    'Each well and channel need to be in a separate directory', 
+    formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('path', default=os.getcwd(), nargs='?',
+    help='path to images  (default: current directory)')
+parser.add_argument('-o', '--output-format', nargs='?', default='jpeg',
+    help='format for the stitched image (default: %(default)s)')
+parser.add_argument('-i', '--input-format', nargs='?', default='bmp',
+    help='format for images to be stitched, can also be a list of formats (default: %(default)s)')
+parser.add_argument('-f', '--field-string', default='_f',
+    help='string immediately preceding the field number in the file name (default: %(default)s)')
+parser.add_argument('-w', '--well-string', default='_f',
+    help='string immediately preceding the well id in the file name (default: %(default)s)')
+parser.add_argument('-d', '--direction', nargs='?', default='left_up',
+    help='directions from the 1st field to the 2nd and 3rd, e.g. left_up =\n' \
+    '3, 4, 5, \n' \
+    '2, 1, 6, \n' \
+    '9, 8, 7 (default: %(default)s)')
+parser.add_argument('-c', '--create-subfolders', action='store_true',
+    help='if all images are in the same directory, subfolders MUST be created. ' \
+    'Can be used to only sort files if -r is omitted')
+parser.add_argument('-r', '--recursive', action='store_true',
+    help='stitch images in subdirectories')
+parser.add_argument('-n', '--no-flip', action='store_true',
+    help='do not flip the input images vertically')
+#Initialize some variables
+args = parser.parse_args()
+# PIL's image function takes 'jpeg' instead of 'jpg' as an argument. We want to be able to
+# specify the image format to this function while defining the image extensions as 'jpg'.
+if args.output_format == 'jpeg':
+    output_format = 'jpg'
+else:
+    output_format = args.output_format
+timestamp = str(int(time.time()))[3:]
+img_types = set((args.input_format,)) #can add extra ext here is needed, remember to not have same as stiched
+logging.basicConfig(filename='well_stitch.log',level=logging.DEBUG, format='%(message)s')
+
+print('Stitching images...')
+
+#Define movement function for filling in the sprial array
+def move_right(x,y):
+    return x, y +1
+
+
+def move_down(x,y):
+    return x+1,y
+
+
+def move_left(x,y):
+    return x,y -1
+
+
+def move_up(x,y):
+    return x -1,y
+
+    
+def spiral_structure(dir_path, img_types):
+    '''
+    Define the movement scheme and starting point for the field layout
+    '''
+    #find the number of fields/images matching the specified extension(s)
+    fields = len([fname for fname in os.listdir(dir_path) if fname[-3:] in img_types])
+    #size the array based on the field number, array will be squared
+    arr_dim = int(np.ceil(np.sqrt(fields)))
+    #define the movement schema and find the starting point (middle) of the array
+    if args.direction == 'down_left':
+        moves = [move_down, move_left, move_up, move_right]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:        
+            starting_point = (int(arr_dim/2)-1, int(arr_dim/2))
+    elif args.direction == 'left_down':
+        moves = [move_left, move_down, move_right, move_up]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:
+            starting_point = (int(arr_dim/2)-1, int(arr_dim/2))
+    elif args.direction == 'down_right':
+        moves = [move_down, move_right, move_up, move_left]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:
+            starting_point = (int(arr_dim/2)-1, int(arr_dim/2)-1)
+    elif args.direction == 'right_down':
+        moves = [move_right, move_down, move_left, move_up]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:
+            starting_point = (int(arr_dim/2)-1, int(arr_dim/2)-1)
+    elif args.direction == 'up_left':
+        moves = [move_up, move_left, move_down, move_right]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+    elif args.direction == 'left_up':
+        moves = [move_left, move_up, move_right, move_down]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+    elif args.direction == 'up_right':
+        moves = [move_up, move_right, move_down, move_left]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:
+            starting_point = (int(arr_dim/2), int(arr_dim/2)-1)
+    elif args.direction == 'right_up':
+        moves = [move_right, move_up, move_left, move_down]
+        if arr_dim % 2 != 0:
+            starting_point = (int(arr_dim/2), int(arr_dim/2))
+        else:
+            starting_point = (int(arr_dim/2), int(arr_dim/2)-1)
+
+    return fields, arr_dim, moves, starting_point
+        
+
+def gen_points(end, moves, starting_point):
+    '''
+    Generate coordinates for each field number. From stackoverflow
+    '''
+    _moves = cycle(moves)
+    n = 1
+    pos = starting_point
+    times_to_move = 1
+
+    yield n,pos
+
+    while True:
+        for _ in range(2):
+            move = next(_moves)
+            for _ in range(times_to_move):
+                if n >= end:
+                    return
+                pos = move(*pos)
+                n+=1
+                yield n,pos
+
+        times_to_move+=1
+              
+
+def spiral_array(fields, arr_dim, moves, starting_point, zeroth_field):
+    '''
+    Fill the array in the given direction
+    '''
+    #create an array of zeros and then fill with a number not used for any field
+    img_layout = np.zeros((arr_dim, arr_dim), dtype=int)
+    img_layout[:] = -1 #TODO this means that the zeroth field will be put in multiple places... fixed?
+    #create a different layout depending on the numbering of the first field
+    if zeroth_field:
+        for point, coord in list(gen_points(fields, moves, starting_point)):
+            img_layout[coord] = point -1
+        logging.info('\nField layout:')    
+        for row in np.ma.masked_equal(img_layout, -1): #TODO fix so that lines are showing for unused field
+            logging.info(' '.join(['{:>2}'.format(str(i)) for i in row]))
+
+    else:
+        for point, coord in list(gen_points(fields, moves, starting_point)):
+            img_layout[coord] = point
+        logging.info('Field layout:')    
+        for row in np.ma.masked_equal(img_layout, -1):
+            logging.info(' '.join(['{:>2}'.format(str(i)) for i in row]))
+
+    return img_layout
+              
+
+def find_images(dir_path, img_types, no_flip, field_str):
+    '''
+    Create a dictionary with the field numbers as keys to the field images
+    '''
+    zeroth_field = False #changes if a zeroth field is found in 'find_images'
+    imgs = {}
+    logging.info('----------------------------------------------')
+    logging.info(dir_path)
+    #go through each directory
+    for fname in os.listdir(dir_path):
+        if fname[-3:] in img_types:
+            logging.info(fname)
+            #find the index of the field identifier string in the file name
+            field_ind = fname.index(field_str) + len(field_str)
+            fnum = int(''.join([str(int(char)) for char in fname[field_ind:field_ind+2] if char.isdigit()]))
+            #If field 0 is encountered, change start numbering of the array
+            if fnum == 0:
+                zeroth_field = True
+            #The default is to flip since this is the most common case
+            if no_flip:
+                imgs[fnum] = Image.open(os.path.join(dir_path, fname))
+            else:
+                #dunno why we need to flip...
+                imgs[fnum] = Image.open(os.path.join(dir_path, fname)).transpose(Image.FLIP_TOP_BOTTOM) #transpose(Image.FLIP_LEFT_RIGHT)
+                
+    return imgs, zeroth_field
+
+#stitch the image row by row
+def stitch_images(imgs, img_layout, dir_path, output_format, arr_dim, stiched_dir):
+    '''
+    Stitch images by going row and column wise in the img_layout and look up
+    the number of the image to place at the (row, col) coordinate. So not filling
+    in a spiral but using the spiral lookuptable instead.
+    '''
+    #create the size of the well image to be filled in
+    width, height = imgs[1].size
+    num = 0
+    stitched_well = Image.new('RGB', (width*arr_dim, height*arr_dim))
+    for row in xrange(0, width*arr_dim, width):
+        for col in xrange(0, height*arr_dim, height):
+            #since the image is filled by row and col instead of sprial, this
+            #error catching is needed for the empty places
+            try:
+                #'stitch' fields by pasting them at the appropriate place in the black background
+                stitched_well.paste(imgs[img_layout.ravel()[num]], (col, row))
+            except KeyError:
+                pass
+            num += 1
+    #save image
+    stitched_name = os.path.join(dir_path, 'stitched_wells/stitched_' + timestamp + '.' + output_format)
+#    stitched.save(stitched_name, format=output_format)
+    # stitched.show()
+    
+    return stitched_well
+
+
+def create_subfolders(dir_path, well_str):
+    well_names = []
+    num = 0
+    #go through all the files to find the well names
+    for fname in os.listdir(dir_path):
+        if fname[-3:] in img_types:
+            #find the well id using the provided helper string and add it to the list
+            well_ind = fname.index(well_str) + len(well_str)
+            well_name = [fname[well_ind]]
+            well_name.append([str(int(char)) for char in fname[well_ind+1:well_ind+3] if char.isdigit()])
+            well_name = ''.join([char for sublist in well_name for char in sublist])
+            well_names.append(well_name)
+            #if the well name is not the same as the previous or if it is the first
+            #file, make a new directory
+            if well_name != well_names[num-1] or num == 0:
+                num += 1
+                logging.info('made dir ' + os.path.join(dir_path, well_name))
+                if not os.path.exists(os.path.join(dir_path, well_name)):
+                    os.makedirs(os.path.join(dir_path, well_name))
+                    logging.info('made dir ' + os.path.join(dir_path, well_name))
+            #move the current file to the new directory
+            logging.info('moving file to ' + os.path.join(os.path.join(dir_path, well_name), fname))
+            shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))       
+    logging.info('created well directories ' + str(set(well_names)))
+    #Create a dir for each well and move all the matching files to it
+#    for well_name in set(well_names):
+#        if not os.path.exists(os.path.join(dir_path, well_name)):
+#            os.makedirs(os.path.join(dir_path, well_name))
+#            for fname in os.listdir(dir_path):
+#                if fname[-3:] in img_types:
+#                    well_ind = fname.index(well_str) + len(well_str)
+#                    if well_name == ''.join([str(int(char)) for char in fname[well_ind:well_ind+2] if char.isdigit()]):
+#                        shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))
+#    
+    return set(well_names)
+        
+#if I craete a dict with well names and the files, I can use the well name to create:
+#the stitched file in the script level directory and use the well name to separate them instead
+#come up with a new way to find the field name since the well string is now variable, either portion just 
+#behind it or between it and the well string %w?       
+
+ 
+# Create subfolders 
+if args.create_subfolders:
+    well_names = create_subfolders(args.path, args.well_string)
+
+# Main program
+if args.recursive:
+    stitched_dir = os.path.join(args.path, 'stitched_wells')
+    dir_suffix = 1
+    while os.path.exists(stitched_dir): 
+        dir_suffix += 1
+        stitched_dir = os.path.join(args.path, 'stitched_wells_' + str(dir_suffix))
+    os.makedirs(stitched_dir)
+    logging.info('Created directory ' + os.path.join(stitched_dir))
+    dirs = [name for name in os.listdir(args.path) if os.path.isdir(name)]
+    well_dirs = [name for name in dirs if not name.startswith('stitched_wells')]
+    num_dirs = len(well_dirs)
+    # Walk through each subdirectory and the current directory
+    for num, dir_name in enumerate(well_dirs, start=1):
+        progress = num / num_dirs * 100
+        sys.stdout.write("\r%d%%" % progress)
+        sys.stdout.flush()
+        imgs, zeroth_field = find_images(dir_name, img_types, args.no_flip, args.field_string)
+        #if there are images in the directory
+        if imgs:
+            fields, arr_dim, moves, starting_point = spiral_structure(dir_name, img_types)
+            img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)
+            stitched_well = stitch_images(imgs, img_layout, dir_name, args.output_format, arr_dim, stitched_dir)
+            stitched_well_name = os.path.join(stitched_dir, os.path.basename(dir_name) + '.' + output_format)
+            stitched_well.save(stitched_well_name, format=args.output_format)
+            logging.info('Stitched image saved to ' + stitched_well_name + '\n')
+        else:
+            logging.info('No images found\n')
+else:
+    imgs, zeroth_field = find_images(args.path, img_types, args.no_flip, args.field_string)
+    #if there are images in the directory
+    if imgs:
+        fields, arr_dim, moves, starting_point = spiral_structure(args.path, img_types)
+        img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)
+        stitched_name = stitch_images(imgs, img_layout, args.path, args.output_format, arr_dim)
+        logging.info('Stitched image saved to ' + stitched_name + '\n')
+    else:
+        logging.info('No images found\n')
+
+print('\n Stitched well images can be found in ' + stitched_dir + '.\nPlease check the log file for which images and what field layout were used to create the stitched image.\nDone.')
+
+#if args.recursive:
+#    for dir_list in os.walk(dir_path):
+#        print(dir_list[0])
+#        for fname in os.listdir(dir_list[2]:
+#            if fname[-3:] in img_types:
+#                print(fname)
+#                fnum = [int(char) for char in fname[33:35] if char.isdigit()][0]
+#                #dunno why we need to flip...
+#                imgs[fnum] = Image.open(os.path.join(dir_list[0], fname)).transpose(Image.FLIP_TOP_BOTTOM)
+#else:
+#    for fname in os.listdir(dir_path):
+#        if fname[-3:] in img_types:
+#            print(fname)
+#            fnum = [int(char) for char in fname[33:35] if char.isdigit()][0]
+#            #dunno why we need to flip...
+#            imgs[fnum] = Image.open(os.path.join(dir_path, fname)).transpose(Image.FLIP_TOP_BOTTOM)
+        
+
+
+#could use this to create array of any size, but how to fill it in a spiral?
+# array_dimension = int(np.ceil(np.sqrt(len(glob.glob(os.path.join(path, '*bmp'))))))
+# img_layout = np.array([[3, 4, 5],
+#                        [2, 1, 6],
+#                        [9, 8, 7]]).ravel()
+
+
+#set the layout
+#img_layout = (13, 14, 15, 16, 17,
+#              12,  3,  4,  5, 18,
+#              11,  2,  1,  6, 19,
+#              10,  9,  8,  7, 20,
+#              25, 24, 23, 22, 21,)
+#if args.layout_fields == 'right_down':
+#    img_layout = img_layout[::-1]
+

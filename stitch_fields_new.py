@@ -8,9 +8,14 @@ Joel 2015-04-03
 '''
 from __future__ import print_function
 from __future__ import division
+<<<<<<< HEAD
 from skimage import exposure #only for rescaling now, maybe replace PIL completely in the future
 from itertools import cycle
 from PIL import Image # could be either pillow or PIL?
+=======
+from itertools import cycle
+from PIL import Image
+>>>>>>> 9bd8e4d89390bcc8c777aa9e87058bef4a37f002
 import numpy as np
 import argparse
 import logging
@@ -19,6 +24,7 @@ import time
 import sys
 import re
 import os
+<<<<<<< HEAD
 
 # Putting the main logic of the program into main() can actually make it run faster
 # this is since the local scopes are implememnted as arrays, which is faster then
@@ -166,6 +172,128 @@ def rescale_intensities(imgs, max_int):
 
 
 ## Functions ##
+=======
+
+# Putting the main logic of the program into main() can actually make it run faster
+# this is since the local scopes are implememnted as arrays, which is faster then
+# the dictionary implementation of global scopes. More details:
+# http://stackoverflow.com/questions/11241523/why-does-python-code-run-faster-in-a-function
+def main():
+    # Set up the command line arguments
+    # the formatter_class adds the default value to optional arguments
+    # argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    # for positional arguments, one has to add the same string that the optional gets automatically
+    parser = argparse.ArgumentParser(description='A small utility for field images ' \
+        'exported from automated microscope platforms.\nStarts in the middle and ' \
+        'stitches fields in a spiral pattern to create the well image.\n' \
+        'Each well and channel need to be in a separate directory. Use `-c` to sort '\
+        'images into\ndirectories automatically. Make sure to specify the correct field '\
+        'and well string (-f, -w).\nExample usage when the images from all wells are in the '\
+        'same directory:\n\npython stitch_fields.py -cr -f <field_prefix> -w <well_prefix>', 
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('path', default=os.getcwd(), nargs='?',
+        help='path to images  (default: current directory)')
+    parser.add_argument('-o', '--output-format', nargs='?', default='jpeg',
+        help='format for the stitched image (default: %(default)s)')
+    parser.add_argument('-i', '--input-format', nargs='?', default='bmp',
+        help='format for images to be stitched, can also be a list of formats (default: %(default)s)')
+    parser.add_argument('-f', '--field-prefix', default='_f',
+        help='string immediately preceding the field number in the file name (default: %(default)s)')
+    parser.add_argument('-w', '--well-prefix', default='0001_',
+        help='string immediately preceding the well id in the file name (default: %(default)s)')
+    parser.add_argument('-d', '--scan-direction', nargs='?', default='left_down',
+        help='The directions from the 1st field to the 2nd and 3rd, e.g. left_down =\n' \
+        '9, 8, 7, \n' \
+        '2, 1, 6, \n' \
+        '3, 4, 5 (default: %(default)s)')
+    parser.add_argument('-e', '--sort-wells', action='store_true',
+        help='if all images are in the same directory, subfolders MUST be created. ' \
+        'Can be used to only sort files if -r is omitted')
+    parser.add_argument('-a', '--sort-channels', action='store_true',
+        help='Create subfolders for each channel based on the specified channel prefix.')
+    parser.add_argument('-r', '--recursive', action='store_true',
+        help='stitch images in subdirectories')
+    parser.add_argument('--flip', default='none', choices=['horizontal', 'vertical', 'both', 'none'], help='How to flip the image (default: %(default)s)')
+    #Initialize some variables
+    args = parser.parse_args()
+    # PIL's image function takes 'jpeg' instead of 'jpg' as an argument. We want to be able to
+    # specify the image format to this function while defining the image extensions as 'jpg'.
+    if args.output_format == 'jpeg':
+        output_format = 'jpg'
+    else:
+        output_format = args.output_format
+   # timestamp = str(int(time.time()))[3:]
+    input_format = set((args.input_format,)) #can add extra ext here is needed, remember to not have same as stiched
+    logging.basicConfig(filename='well_stitch.log',level=logging.DEBUG, format='%(message)s')
+    # Print out the runtime parameters and store them in a log file
+    for key in vars(args): # Returns a dictionary instead of a Namespace object
+        print(key +'\t', vars(args)[key])
+        #logging.info(key +'\t', vars(args)[key])
+
+    # Sort channels and create subfolders
+    if args.sort_channels:
+        print('\n Moving images to subfolders...')
+        channel_names = sort_channels(args.path, args,channel_prefix)
+    
+    # Sort wells and create subfolders 
+    if args.sort_wells:
+        print('\n Moving images to subfolders...')
+        well_names = sort_wells(args.path, args.well_prefix, input_format)
+    
+    # Main program
+    if args.recursive:
+        # Create a new directory. Append a number if it already exists.
+        stitched_dir = os.path.join(args.path, 'stitched_wells')
+        dir_suffix = 1
+        while os.path.exists(stitched_dir): 
+            dir_suffix += 1
+            stitched_dir = os.path.join(args.path, 'stitched_wells_' + str(dir_suffix))
+        os.makedirs(stitched_dir)
+        logging.info('Created directory ' + os.path.join(stitched_dir))
+        # Loop through only the well directories, the current directory does not need to be
+        # included as the files will already be sorted into subdirectories
+        dirs = [name for name in os.listdir(args.path) if os.path.isdir(name)]
+        well_dirs = [name for name in dirs if not name.startswith('stitched_wells')]
+        num_dirs = len(well_dirs)
+        for num, dir_name in enumerate(sorted(well_dirs, key=nat_key), start=1):
+            # Progress bar. The trailing space in the print function is needed to update that position.
+            # Otherwise that would be forzen when moving from a two digit to a one digit number.
+            progress = int(num / num_dirs * 100)
+            print('{0}% {1} '.format(progress, dir_name), end='\r')
+            sys.stdout.flush()
+            imgs, zeroth_field = find_images(dir_name, input_format, args.flip, args.field_prefix)
+            # If there are images in the directory
+            if imgs:
+                fields, arr_dim, moves, starting_point = spiral_structure(dir_name, input_format, args.scan_direction)
+                img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)
+                stitched_well = stitch_images(imgs, img_layout, dir_name, args.output_format, arr_dim, stitched_dir)
+                stitched_well_name = os.path.join(stitched_dir, os.path.basename(dir_name) + '.' + output_format)
+                stitched_well.save(stitched_well_name, format=args.output_format)
+                logging.info('Stitched image saved to ' + stitched_well_name + '\n')
+            else:
+                logging.info('No images found in this directory\n')
+    else:
+        imgs, zeroth_field = find_images(args.path, input_format, args.flip, args.field_prefix)
+        stitched_dir = os.path.join(args.path, 'stitched_wells')
+        #if there are images in the directory
+        if imgs:
+            fields, arr_dim, moves, starting_point = spiral_structure(args.path, input_format, args.scan_direction)
+            img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)
+            stitched_name = stitch_images(imgs, img_layout, args.path, args.output_format, arr_dim)
+            logging.info('Stitched image saved to ' + stitched_name + '\n')
+        else:
+            logging.info('No images found\n')
+    
+    os.rename('./well_stitch.log', os.path.join(stitched_dir, 'well_stitch.log')) 
+    
+    print('\n\nStitched well images can be found in ' + stitched_dir + '.\nPlease check the log file for which images and what field layout were used to create the stitched image.\nDone.')
+
+
+
+
+
+
+>>>>>>> 9bd8e4d89390bcc8c777aa9e87058bef4a37f002
 
 # Define movement function for filling in the spiral array
 def move_right(x,y):
@@ -300,7 +428,10 @@ def find_images(dir_path, input_format, flip, field_str):
     '''
     zeroth_field = False #changes if a zeroth field is found in 'find_images'
     imgs = {}
+<<<<<<< HEAD
     max_ints = []
+=======
+>>>>>>> 9bd8e4d89390bcc8c777aa9e87058bef4a37f002
     logging.info('----------------------------------------------')
     logging.info(dir_path)
     #go through each directory
@@ -325,6 +456,7 @@ def find_images(dir_path, input_format, flip, field_str):
                 # I don't think thei sould ever be the case, it could just be adjusted with another 
                 # spiral rotation, but putting it here for completion
                 imgs[fnum] = Image.open(os.path.join(dir_path, fname)).transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
+<<<<<<< HEAD
 	    # Collect max intensities here instead of looping through an extra time
 	    max_ints.append(np.percentile(np.array(imgs[fnum]).ravel(), 99.999)) # make this a user variable
 	 #   min_ints.append(np.percentile(np.array(imgs[fnum]).ravel(), 0.11)) # make this a user variable
@@ -340,6 +472,10 @@ def find_images(dir_path, input_format, flip, field_str):
 
 
 
+=======
+                
+    return imgs, zeroth_field
+>>>>>>> 9bd8e4d89390bcc8c777aa9e87058bef4a37f002
 
 #stitch the image row by row
 def stitch_images(imgs, img_layout, dir_path, output_format, arr_dim, stiched_dir):
@@ -370,6 +506,7 @@ def stitch_images(imgs, img_layout, dir_path, output_format, arr_dim, stiched_di
     return stitched_well
 
 
+<<<<<<< HEAD
 def sort_channels(dir_path, channel_str, input_format):
     well_names = []
     num = 0
@@ -377,6 +514,18 @@ def sort_channels(dir_path, channel_str, input_format):
         if fname[-3:].lower() in input_format:
 	    well_ind = fname.index(channel_str) + len(channel_str)
             well_name = [fname[well_ind]]
+=======
+def sort_wells(dir_path, well_str, input_format):
+    well_names = []
+    num = 0
+    #go through all the files to find the well names
+    for fname in os.listdir(dir_path):
+        if fname[-3:].lower() in input_format:
+            #find the well id using the provided helper string and add it to the list
+            well_ind = fname.index(well_str) + len(well_str)
+            well_name = [fname[well_ind]]
+            well_name.append([str(int(char)) for char in fname[well_ind+1:well_ind+3] if char.isdigit()])
+>>>>>>> 9bd8e4d89390bcc8c777aa9e87058bef4a37f002
             well_name = ''.join([char for sublist in well_name for char in sublist])
             well_names.append(well_name)
             #if the well name is not the same as the previous or if it is the first
@@ -385,6 +534,7 @@ def sort_channels(dir_path, channel_str, input_format):
                 num += 1
                 if not os.path.exists(os.path.join(dir_path, well_name)):
                     os.makedirs(os.path.join(dir_path, well_name))
+<<<<<<< HEAD
             logging.info('moving ./' + fname + ' to ./' + os.path.join(well_name, fname))
             shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))       
     logging.info('created well directories ' + str(set(well_names)))
@@ -427,6 +577,22 @@ def sort_wells(dir_path, well_str, input_format, channel_names):
     #                    if well_name == ''.join([str(int(char)) for char in fname[well_ind:well_ind+2] if char.isdigit()]):
     #                        shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))
     #    
+=======
+            #move the current file to the new directory
+            logging.info('moving ./' + fname + ' to ./' + os.path.join(well_name, fname))
+            shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))       
+    logging.info('created well directories ' + str(set(well_names)))
+    #Create a dir for each well and move all the matching files to it
+#    for well_name in set(well_names):
+#        if not os.path.exists(os.path.join(dir_path, well_name)):
+#            os.makedirs(os.path.join(dir_path, well_name))
+#            for fname in os.listdir(dir_path):
+#                if fname[-3:] in input_format:
+#                    well_ind = fname.index(well_str) + len(well_str)
+#                    if well_name == ''.join([str(int(char)) for char in fname[well_ind:well_ind+2] if char.isdigit()]):
+#                        shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))
+#    
+>>>>>>> 9bd8e4d89390bcc8c777aa9e87058bef4a37f002
     return set(well_names)
         
 #if I craete a dict with well names and the files, I can use the well name to create:

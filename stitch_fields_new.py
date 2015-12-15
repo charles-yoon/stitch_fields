@@ -65,10 +65,10 @@ def main():
         help='Stitch images in subdirectories')
     parser.add_argument('-s', '--rescale_intensity', action='store_true',
         help='Scales the bit range from the input image to 8 bits. Our cellomics has a 12-bit camera and ' \
-	'values are usually not higher than ~1500 so even rescaling to 12 bit (4095) would render dark images. ' \
-	'Find the ~max (99.999th percentile in the entire plate and scales everything accordingly.' \
-	'Now we can export 16-bit tiff files instead of converting to 8 bit in cellomics, which would ' \
-	'makes them appear patchy.')
+        'values are usually not higher than ~1500 so even rescaling to 12 bit (4095) would render dark images. ' \
+        'Find the ~max (99.999th percentile in the entire plate and scales everything accordingly.' \
+        'Now we can export 16-bit tiff files instead of converting to 8 bit in cellomics, which would ' \
+        'makes them appear patchy.')
     parser.add_argument('--flip', default='none', choices=['horizontal', 'vertical', 'both', 'none'])
     #Initialize some variables
     args = parser.parse_args()
@@ -100,41 +100,41 @@ def main():
     # Main program
     if args.recursive:
         # Create a new directory. Append a number if it already exists.
-	print('\nStitching wells...')
-	stitched_dir = os.path.join(args.path, 'stitched_wells')
-	dir_suffix = 1
-	while os.path.exists(stitched_dir):
-	    dir_suffix += 1
-	    stitched_dir = os.path.join(args.path, 'stitched_wells_' + str(dir_suffix))
-	os.makedirs(stitched_dir)
-	logging.info('Created directory ' + os.path.join(stitched_dir))
-	# Loop through only the well directories, the current directory does not need to be
-	# included as the files will already be sorted into subdirectories
-	dirs = [name for name in os.listdir(args.path) if os.path.isdir(name)]
-	well_dirs = [name for name in dirs if not name.startswith('stitched_wells')]
-	num_dirs = len(well_dirs)
-	for num, dir_name in enumerate(sorted(well_dirs, key=nat_key), start=1):
-	    # Progress bar. The trailing space in the print function is needed to update that position.
-	    # Otherwise that would be forzen when moving from a two digit to a one digit number.
-	    progress = int(num / num_dirs * 100)
-	    print('{0}% {1} '.format(progress, dir_name), end='\r')
-	    sys.stdout.flush()
+        print('\nStitching wells...')
+        stitched_dir = os.path.join(args.path, 'stitched_wells')
+        dir_suffix = 1
+        while os.path.exists(stitched_dir):
+            dir_suffix += 1
+            stitched_dir = os.path.join(args.path, 'stitched_wells_' + str(dir_suffix))
+        os.makedirs(stitched_dir)
+        logging.info('Created directory ' + os.path.join(stitched_dir))
+        # Loop through only the well directories, the current directory does not need to be
+        # included as the files will already be sorted into subdirectories
+        dirs = [name for name in os.listdir(args.path) if os.path.isdir(name)]
+        well_dirs = [name for name in dirs if not name.startswith('stitched_wells')]
+        num_dirs = len(well_dirs)
+        for num, dir_name in enumerate(sorted(well_dirs, key=nat_key), start=1):
+            # Progress bar. The trailing space in the print function is needed to update that position.
+            # Otherwise that would be forzen when moving from a two digit to a one digit number.
+            progress = int(num / num_dirs * 100)
+            print('{0}% {1} '.format(progress, dir_name), end='\r')
+            sys.stdout.flush()
 
-	    # add for channel here
+            # add for channel here
 
-	    imgs, zeroth_field, max_int = find_images(dir_name, input_format, args.flip, args.field_prefix)
-	    # If there are images in the directory
-	    if imgs:
-		if args.rescale_intensity:
-		    imgs = rescale_intensities(imgs, max_int)
-		fields, arr_dim, moves, starting_point = spiral_structure(dir_name, input_format, args.scan_direction)
-		img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)
-		stitched_well = stitch_images(imgs, img_layout, dir_name, output_format, arr_dim, stitched_dir)
-		stitched_well_name = os.path.join(stitched_dir, os.path.basename(dir_name) + '.' + output_format)
-		stitched_well.save(stitched_well_name, format=args.output_format)
-		logging.info('Stitched image saved to ' + stitched_well_name + '\n')
-	    else:
-		logging.info('No images found in this directory\n')
+            imgs, zeroth_field, max_int = find_images(dir_name, input_format, args.flip, args.field_prefix)
+            # If there are images in the directory
+            if imgs:
+                if args.rescale_intensity:
+                    imgs = rescale_intensities(imgs, max_int)
+                fields, arr_dim, moves, starting_point = spiral_structure(dir_name, input_format, args.scan_direction)
+                img_layout = spiral_array(fields, arr_dim, moves, starting_point, zeroth_field)
+                stitched_well = stitch_images(imgs, img_layout, dir_name, output_format, arr_dim, stitched_dir)
+                stitched_well_name = os.path.join(stitched_dir, os.path.basename(dir_name) + '.' + output_format)
+                stitched_well.save(stitched_well_name, format=args.output_format)
+                logging.info('Stitched image saved to ' + stitched_well_name + '\n')
+            else:
+                logging.info('No images found in this directory\n')
     else:
         imgs, zeroth_field = find_images(args.path, input_format, args.flip, args.field_prefix, args.rescale_intensity)
         stitched_dir = os.path.join(args.path, 'stitched_wells')
@@ -155,14 +155,14 @@ def main():
 def rescale_intensities(imgs, max_int):
     print(max_int)
     for fnum, img in imgs.iteritems():
-	img_norm = np.array(img) - np.array(img).min()
-	img_norm = img_norm / (max_int / 256)
-	imgs[fnum] = Image.fromarray(np.uint8(img_norm))
-	print(img_norm.ravel().min(), img_norm.ravel().max())
+        img_norm = np.array(img) - np.array(img).min()
+        img_norm = img_norm / (max_int / 256)
+        imgs[fnum] = Image.fromarray(np.uint8(img_norm))
+        print(img_norm.ravel().min(), img_norm.ravel().max())
 
-	#img_stretched = exposure.rescale_intensity(np.array(img), in_range=(0, max_int), out_range=('uint8'))
-	#print(img_stretched.ravel().min(), img_stretched.ravel().max())
-	#imgs[fnum] = Image.fromarray(np.uint8(img_stretched))
+        #img_stretched = exposure.rescale_intensity(np.array(img), in_range=(0, max_int), out_range=('uint8'))
+        #print(img_stretched.ravel().min(), img_stretched.ravel().max())
+        #imgs[fnum] = Image.fromarray(np.uint8(img_stretched))
     return imgs
 
 
@@ -447,12 +447,12 @@ def find_images(dir_path, input_format, flip, field_str):
                 # I don't think thei sould ever be the case, it could just be adjusted with another
                 # spiral rotation, but putting it here for completion
                 imgs[fnum] = Image.open(os.path.join(dir_path, fname)).transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-	    # Collect max intensities here instead of looping through an extra time
-	    max_ints.append(np.percentile(np.array(imgs[fnum]).ravel(), 99.999)) # make this a user variable
-	 #   min_ints.append(np.percentile(np.array(imgs[fnum]).ravel(), 0.11)) # make this a user variable
+            # Collect max intensities here instead of looping through an extra time
+            max_ints.append(np.percentile(np.array(imgs[fnum]).ravel(), 99.999)) # make this a user variable
+         #   min_ints.append(np.percentile(np.array(imgs[fnum]).ravel(), 0.11)) # make this a user variable
 #            if rescale_intensity:
-#		img_stretched = exposure.rescale_intensity(np.array(imgs[fnum]), in_range='uint12', out_range=('uint8'))
-#		imgs[fnum] = Image.fromarray(np.uint8(img_stretched))
+#               img_stretched = exposure.rescale_intensity(np.array(imgs[fnum]), in_range='uint12', out_range=('uint8'))
+#               imgs[fnum] = Image.fromarray(np.uint8(img_stretched))
     print(max_ints)
     if max_ints != []:
        # max_ints = max(max_ints) # the highest intensity in the entire plate
@@ -499,7 +499,7 @@ def sort_channels(dir_path, channel_str, input_format):
     num = 0
     for fname in os.listdir(dir_path):
         if fname[-3:].lower() in input_format:
-	    well_ind = fname.index(channel_str) + len(channel_str)
+            well_ind = fname.index(channel_str) + len(channel_str)
             well_name = [fname[well_ind]]
 def sort_wells(dir_path, well_str, input_format):
     well_names = []
@@ -530,28 +530,28 @@ def sort_wells(dir_path, well_str, input_format, channel_names):
     num = 0
 #    for channel_name in channel_names:
 #        print('cahnnel name = ' + channel_name)
-#	channel_path = os.path.join(dir_path, channel_name)
-	#go through all the files to find the well names
+#       channel_path = os.path.join(dir_path, channel_name)
+        #go through all the files to find the well names
     for fname in os.listdir(dir_path):
-	print(fname)
-	if fname[-3:].lower() in input_format:
-	    #find the well id using the provided helper string and add it to the list
-	    well_ind = fname.index(well_str) + len(well_str)
-	    well_name = [fname[well_ind]]
-	    well_name.append([str(int(char)) for char in fname[well_ind+1:well_ind+3] if char.isdigit()])
-	    well_name = ''.join([char for sublist in well_name for char in sublist])
-	    well_names.append(well_name)
-	    #if the well name is not the same as the previous or if it is the first
-	    #file, make a new directory
-	    if well_name != well_names[num-1] or num == 0:
-		num += 1
-		if not os.path.exists(os.path.join(dir_path, well_name)):
-		    os.makedirs(os.path.join(dir_path, well_name))
-	    #move the current file to the new directory
-	    logging.info('moving ./' + fname + ' to ./' + os.path.join(well_name, fname))
-	    shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))
-    logging.info('created well directories ' + str(set(well_names)))
-	#Create a dir for each well and move all the matching files to it
+        print(fname)
+        if fname[-3:].lower() in input_format:
+            #find the well id using the provided helper string and add it to the list
+            well_ind = fname.index(well_str) + len(well_str)
+            well_name = [fname[well_ind]]
+            well_name.append([str(int(char)) for char in fname[well_ind+1:well_ind+3] if char.isdigit()])
+            well_name = ''.join([char for sublist in well_name for char in sublist])
+            well_names.append(well_name)
+            #if the well name is not the same as the previous or if it is the first
+            #file, make a new directory
+            if well_name != well_names[num-1] or num == 0:
+                num += 1
+                if not os.path.exists(os.path.join(dir_path, well_name)):
+                    os.makedirs(os.path.join(dir_path, well_name))
+            #move the current file to the new directory
+            logging.info('moving ./' + fname + ' to ./' + os.path.join(well_name, fname))
+            shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))
+            logging.info('created well directories ' + str(set(well_names)))
+        #Create a dir for each well and move all the matching files to it
     #    for well_name in set(well_names):
     #        if not os.path.exists(os.path.join(dir_path, well_name)):
     #            os.makedirs(os.path.join(dir_path, well_name))
@@ -564,7 +564,7 @@ def sort_wells(dir_path, well_str, input_format, channel_names):
             #move the current file to the new directory
             logging.info('moving ./' + fname + ' to ./' + os.path.join(well_name, fname))
             shutil.move(os.path.join(dir_path, fname), os.path.join(os.path.join(dir_path, well_name), fname))
-    logging.info('created well directories ' + str(set(well_names)))
+            logging.info('created well directories ' + str(set(well_names)))
     #Create a dir for each well and move all the matching files to it
 #    for well_name in set(well_names):
 #        if not os.path.exists(os.path.join(dir_path, well_name)):
